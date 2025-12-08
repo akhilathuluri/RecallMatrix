@@ -20,6 +20,7 @@ interface TelegramStatus {
   telegram_username?: string;
   telegram_name?: string;
   connected_at?: string;
+  error?: string;
 }
 
 interface AuthCode {
