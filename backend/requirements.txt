@@ -1,0 +1,38 @@
+# Telegram Bot Backend Requirements
+
+# Core Framework
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Telegram
+python-telegram-bot
+python-telegram-bot[webhooks]
+
+# Database
+asyncpg
+psycopg2-binary
+
+# Supabase
+supabase
+storage3
+
+# AI/Embeddings
+openai
+tiktoken
+
+# HTTP Client
+httpx
+aiohttp
+
+# Utilities
+python-dotenv
+python-multipart
+cryptography
+
+# Date/Time
+python-dateutil
+
+# Logging
+loguru
