@@ -1,4 +1,4 @@
-# MemoryVault
+# RecallMatrix
 
 An AI-powered memory management web application with intelligent RAG (Retrieval-Augmented Generation) search capabilities. Built for people who need help remembering important information, MemoryVault uses advanced embedding technology to help you find memories through natural language queries.
 
