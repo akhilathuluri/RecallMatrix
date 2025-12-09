@@ -21,11 +21,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Categorize the memory
-    const category = inferCategory(title, content);
-    const tags = extractTags(title, content);
-
-    console.log('[AUTO-CATEGORIZE]', { memoryId, category, tags });
+    // Try AI-based categorization first, fallback to keyword-based
+    let category: string;
+    let tags: string[];
+    
+    try {
+      const aiResult = await categorizeWithAI(title, content);
+      category = aiResult.category;
+      tags = aiResult.tags;
+      console.log('[AUTO-CATEGORIZE] AI-based:', { memoryId, category, tags });
+    } catch (aiError) {
+      console.warn('[AUTO-CATEGORIZE] AI failed, using keyword fallback:', aiError);
+      category = inferCategory(title, content);
+      tags = extractTags(title, content);
+      console.log('[AUTO-CATEGORIZE] Keyword-based:', { memoryId, category, tags });
+    }
 
     // Update memory with category and tags
     const { error } = await supabase
@@ -54,7 +64,81 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Infer category from title and content
+ * AI-based categorization using GPT model
+ */
+async function categorizeWithAI(title: string, content: string): Promise<{ category: string; tags: string[] }> {
+  const githubToken = process.env.GITHUB_MODELS_API_KEY || process.env.GITHUB_TOKEN;
+  
+  if (!githubToken) {
+    throw new Error('GitHub Models API key not configured');
+  }
+
+  const prompt = `Analyze this memory and categorize it into ONE of these categories: Work, Finance, Health, Travel, Education, Shopping, Entertainment, Family, Personal, Other.
+
+Also extract 3-5 relevant tags (single words or short phrases).
+
+Memory Title: ${title}
+Memory Content: ${content || 'No additional content'}
+
+Respond in JSON format:
+{
+  "category": "CategoryName",
+  "tags": ["tag1", "tag2", "tag3"]
+}`;
+
+  const response = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${githubToken}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { 
+          role: 'system', 
+          content: 'You are a categorization assistant. Always respond with valid JSON containing category and tags.' 
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 150,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub Models API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const aiResponse = data.choices[0]?.message?.content || '{}';
+  
+  // Parse JSON response
+  const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('AI response did not contain valid JSON');
+  }
+  
+  const result = JSON.parse(jsonMatch[0]);
+  
+  // Validate category
+  const validCategories = ['Work', 'Finance', 'Health', 'Travel', 'Education', 'Shopping', 'Entertainment', 'Family', 'Personal', 'Other'];
+  if (!validCategories.includes(result.category)) {
+    result.category = 'Personal';
+  }
+  
+  // Validate tags
+  if (!Array.isArray(result.tags) || result.tags.length === 0) {
+    result.tags = extractTags(title, content); // Fallback to keyword extraction
+  } else {
+    result.tags = result.tags.slice(0, 10); // Limit to 10 tags
+  }
+  
+  return result;
+}
+
+/**
+ * Infer category from title and content (keyword-based fallback)
  */
 function inferCategory(title: string, content: string): string {
   const text = `${title} ${content}`.toLowerCase();
