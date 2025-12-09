@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 
 const CACHE_KEY = 'memories_cache';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const PAGE_SIZE = 12; // Load 12 memories per page
 
 type CachedData = {
   memories: Memory[];
@@ -28,13 +29,20 @@ export default function MemoriesPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [displayedMemories, setDisplayedMemories] = useState<Memory[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [categories, setCategories] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const hasLoadedRef = useRef(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -46,8 +54,8 @@ export default function MemoriesPage() {
   const loadMemories = useCallback(async (forceRefresh = false) => {
     if (!user) return;
 
-    // Try to load from cache first
-    if (!forceRefresh) {
+    // Try to load from cache first for initial load
+    if (!forceRefresh && page === 1) {
       try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
@@ -60,6 +68,9 @@ export default function MemoriesPage() {
             now - cachedData.timestamp < CACHE_DURATION
           ) {
             setMemories(cachedData.memories);
+            setTotalCount(cachedData.memories.length);
+            setDisplayedMemories(cachedData.memories.slice(0, PAGE_SIZE));
+            setHasMore(cachedData.memories.length > PAGE_SIZE);
             
             // Extract categories from cached data
             const categorySet = new Set(
@@ -79,9 +90,19 @@ export default function MemoriesPage() {
       }
     }
 
-    // Fetch from database if no valid cache
+    // Fetch from database - load all memories once for filtering
     setLoading(true);
     try {
+      // Only fetch count on first load
+      if (page === 1) {
+        const { count } = await supabase
+          .from('memories')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+        
+        setTotalCount(count || 0);
+      }
+
       const { data, error } = await supabase
         .from('memories')
         .select('*')
@@ -92,6 +113,8 @@ export default function MemoriesPage() {
       
       const memoriesData = data || [];
       setMemories(memoriesData);
+      setDisplayedMemories(memoriesData.slice(0, PAGE_SIZE));
+      setHasMore(memoriesData.length > PAGE_SIZE);
 
       // Extract unique categories
       const categorySet = new Set(
@@ -119,10 +142,76 @@ export default function MemoriesPage() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [user]);
+  }, [user, page]);
+
+  // Load more memories (pagination)
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const startIndex = page * PAGE_SIZE;
+    const endIndex = startIndex + PAGE_SIZE;
+    
+    const filteredMemories = selectedCategory === 'All' 
+      ? memories 
+      : memories.filter((m: any) => m.category === selectedCategory);
+    
+    const newMemories = filteredMemories.slice(startIndex, endIndex);
+    
+    if (newMemories.length > 0) {
+      setDisplayedMemories(prev => [...prev, ...newMemories]);
+      setPage(nextPage);
+      setHasMore(endIndex < filteredMemories.length);
+    } else {
+      setHasMore(false);
+    }
+    
+    setLoadingMore(false);
+  }, [memories, page, loadingMore, hasMore, selectedCategory]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (loadMoreRef.current) {
+      observerRef.current.observe(loadMoreRef.current);
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [hasMore, loadingMore, loading, loadMore]);
+
+  // Reset pagination when category changes
+  useEffect(() => {
+    if (memories.length > 0) {
+      const filteredMemories = selectedCategory === 'All' 
+        ? memories 
+        : memories.filter((m: any) => m.category === selectedCategory);
+      
+      setDisplayedMemories(filteredMemories.slice(0, PAGE_SIZE));
+      setPage(1);
+      setHasMore(filteredMemories.length > PAGE_SIZE);
+    }
+  }, [selectedCategory, memories]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    setPage(1);
     await loadMemories(true);
     toast.success('Memories refreshed');
   };
@@ -130,12 +219,14 @@ export default function MemoriesPage() {
   const handleMemoryAdded = () => {
     // Invalidate cache when new memory is added
     localStorage.removeItem(CACHE_KEY);
+    setPage(1);
     loadMemories(true);
   };
 
   const handleMemoryDeleted = () => {
     // Invalidate cache when memory is deleted
     localStorage.removeItem(CACHE_KEY);
+    setPage(1);
     loadMemories(true);
   };
 
@@ -174,7 +265,12 @@ export default function MemoriesPage() {
               <GradientText>All Memories</GradientText>
             </h1>
             <p className="text-muted-foreground text-sm sm:text-base md:text-lg">
-              {memories.length} {memories.length === 1 ? 'memory' : 'memories'} saved
+              {totalCount} {totalCount === 1 ? 'memory' : 'memories'} saved
+              {selectedCategory !== 'All' && (
+                <span className="ml-2 text-blue-600 dark:text-blue-400">
+                  ({memories.filter((m: any) => m.category === selectedCategory).length} in {selectedCategory})
+                </span>
+              )}
             </p>
           </div>
           <Button
@@ -259,17 +355,33 @@ export default function MemoriesPage() {
               </Button>
             </div>
           ) : (
-            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
-              {memories
-                .filter((memory: any) => 
-                  selectedCategory === 'All' || memory.category === selectedCategory
-                )
-                .map((memory, index) => (
-                <div key={memory.id} className="animate-in" style={{ animationDelay: `${index * 50}ms` }}>
-                  <MemoryCard memory={memory} onDelete={handleMemoryDeleted} />
+            <>
+              <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+                {displayedMemories.map((memory, index) => (
+                  <div key={memory.id} className="animate-in" style={{ animationDelay: `${index * 50}ms` }}>
+                    <MemoryCard memory={memory} onDelete={handleMemoryDeleted} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Infinite scroll trigger */}
+              {hasMore && (
+                <div ref={loadMoreRef} className="flex justify-center py-8">
+                  {loadingMore && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Loading more memories...</span>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              )}
+
+              {!hasMore && displayedMemories.length > 0 && (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  You've reached the end of your memories
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
