@@ -1,0 +1,40 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend",
+    "${workspaceFolder}/backend/app"
+  ],
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.indexing": true,
+  "python.analysis.stubPath": "${workspaceFolder}/backend",
+  "python.languageServer": "Pylance",
+  "python.defaultInterpreterPath": "python",
+  "python.terminal.activateEnvironment": false,
+  "python.terminal.activateEnvInCurrentTerminal": false,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter",
+    "editor.formatOnSave": false
+  },
+  "python.linting.enabled": false,
+  "python.analysis.ignore": [
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/venv/**"
+  ],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/venv": false
+  },
+  "files.watcherExclude": {
+    "**/venv/**": true,
+    "**/node_modules/**": true
+  },
+  "search.exclude": {
+    "**/venv": true,
+    "**/node_modules": true
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

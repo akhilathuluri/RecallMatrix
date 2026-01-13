@@ -2,7 +2,7 @@
 Configuration management using Pydantic Settings
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict  # type: ignore
 from typing import Literal
 
 

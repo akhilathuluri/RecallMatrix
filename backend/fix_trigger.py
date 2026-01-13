@@ -2,8 +2,8 @@
 Quick script to fix the telegram activity trigger
 """
 import asyncio
-import asyncpg
-from dotenv import load_dotenv
+import asyncpg  # type: ignore
+from dotenv import load_dotenv  # type: ignore
 import os
 
 load_dotenv()

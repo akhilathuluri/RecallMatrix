@@ -1,0 +1,16 @@
+# Python type checker configuration
+# This file disables type checking for the backend to avoid import resolution errors
+
+[tool.pyright]
+include = ["app"]
+exclude = ["venv", "__pycache__"]
+reportMissingImports = false
+reportMissingTypeStubs = false
+typeCheckingMode = "off"
+
+[tool.pylint]
+disable = ["C0111", "C0103", "W0212"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']

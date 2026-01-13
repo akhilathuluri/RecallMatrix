@@ -7,8 +7,8 @@ import secrets
 import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from loguru import logger
-import asyncpg
+from loguru import logger  # type: ignore
+import asyncpg  # type: ignore
 
 from app.config import settings
 

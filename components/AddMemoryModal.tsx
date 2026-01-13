@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Upload, Loader2 } from 'lucide-react';
+import { FileText, Upload, Loader2, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { analyzeImage, isImageFile } from '@/lib/services/imageAnalysisService';
 
 type AddMemoryModalProps = {
   open: boolean;
@@ -32,7 +33,10 @@ export function AddMemoryModal({
   const [textTitle, setTextTitle] = useState('');
   const [textContent, setTextContent] = useState('');
   const [fileTitle, setFileTitle] = useState('');
+  const [fileContent, setFileContent] = useState('');
   const [files, setFiles] = useState<FileList | null>(null);
+  const [analyzingImage, setAnalyzingImage] = useState(false);
+  const [imageAnalyzed, setImageAnalyzed] = useState(false);
 
   const generateEmbedding = async (text: string): Promise<number[]> => {
     const response = await fetch('/api/embeddings', {
@@ -112,6 +116,50 @@ export function AddMemoryModal({
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    setFiles(selectedFiles);
+    setImageAnalyzed(false);
+
+    // Auto-analyze first image if it's an image file
+    if (selectedFiles && selectedFiles.length > 0) {
+      const firstFile = selectedFiles[0];
+      
+      if (isImageFile(firstFile)) {
+        setAnalyzingImage(true);
+        toast.info('Analyzing image...', { icon: '🔍' });
+        
+        try {
+          const analysis = await analyzeImage(firstFile);
+          
+          // Auto-fill the form with AI-generated content
+          setFileTitle(analysis.title);
+          setFileContent(analysis.content);
+          setImageAnalyzed(true);
+          
+          toast.success('Image analyzed successfully!', { 
+            icon: '✨',
+            description: 'Title and description have been auto-filled'
+          });
+        } catch (error) {
+          console.error('Image analysis failed:', error);
+          // Fallback to filename-based title
+          const fallbackTitle = firstFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+          setFileTitle(fallbackTitle);
+          toast.warning('Using filename as title', {
+            description: 'You can edit it before saving'
+          });
+        } finally {
+          setAnalyzingImage(false);
+        }
+      } else {
+        // For non-image files, use filename as title
+        const fallbackTitle = firstFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+        setFileTitle(fallbackTitle);
+      }
+    }
+  };
+
   const handleFileSubmit = async () => {
     if (!fileTitle.trim() || !files || files.length === 0) {
       toast.error('Please provide a title and select files');
@@ -138,7 +186,11 @@ export function AddMemoryModal({
         throw new Error('Total storage limit (100MB) exceeded');
       }
 
-      const embedding = await generateEmbedding(fileTitle);
+      // Use both title and content for better embeddings
+      const embeddingText = fileContent.trim() 
+        ? `${fileTitle} ${fileContent}` 
+        : fileTitle;
+      const embedding = await generateEmbedding(embeddingText);
       const indexPosition = await getNextIndexPosition();
 
       const { data: memory, error: memoryError } = await supabase
@@ -146,7 +198,7 @@ export function AddMemoryModal({
         .insert({
           user_id: userId,
           title: fileTitle,
-          content: '',
+          content: fileContent,
           type: 'file',
           embedding,
           index_position: indexPosition,
@@ -165,7 +217,7 @@ export function AddMemoryModal({
             body: JSON.stringify({
               memoryId: memory.id,
               title: fileTitle,
-              content: '',
+              content: fileContent,
             }),
           });
         } catch (catError) {
@@ -204,7 +256,9 @@ export function AddMemoryModal({
 
       toast.success('Files uploaded successfully!');
       setFileTitle('');
+      setFileContent('');
       setFiles(null);
+      setImageAnalyzed(false);
       onMemoryAdded();
       onOpenChange(false);
     } catch (error: any) {
@@ -280,6 +334,47 @@ export function AddMemoryModal({
           </TabsContent>
           <TabsContent value="file" className="space-y-5 mt-6">
             <div className="space-y-2">
+              <Label htmlFor="file-upload" className="text-sm font-semibold flex items-center gap-2">
+                Files (Images/Videos)
+                {analyzingImage && <Sparkles className="w-4 h-4 text-purple-600 animate-pulse" />}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="file-upload"
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  onChange={handleFileChange}
+                  disabled={analyzingImage}
+                  className="h-32 border-2 border-dashed border-primary/30 hover:border-primary/50 transition-colors cursor-pointer rounded-2xl file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gradient-to-r file:from-blue-500 file:to-indigo-500 file:text-white hover:file:from-blue-600 hover:file:to-indigo-600 file:transition-all file:duration-300 file:shadow-md hover:file:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+              {analyzingImage && (
+                <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                  <p className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+                    Analyzing image with AI...
+                  </p>
+                </div>
+              )}
+              {files && files.length > 0 && !analyzingImage && (
+                <div className="p-3 rounded-xl bg-muted/50 border">
+                  <p className="text-sm font-medium">
+                    {files.length} file{files.length > 1 ? 's' : ''} selected
+                    {imageAnalyzed && (
+                      <span className="ml-2 text-xs text-green-600 dark:text-green-400">
+                        ✨ AI analyzed
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary"></span>
+                Max 10MB per file, 100MB total storage. Images are auto-analyzed by AI.
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="file-title" className="text-sm font-semibold">Title</Label>
               <Input
                 id="file-title"
@@ -290,27 +385,17 @@ export function AddMemoryModal({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="file-upload" className="text-sm font-semibold">Files (Images/Videos)</Label>
-              <div className="relative">
-                <Input
-                  id="file-upload"
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  onChange={(e) => setFiles(e.target.files)}
-                  className="h-32 border-2 border-dashed border-primary/30 hover:border-primary/50 transition-colors cursor-pointer rounded-2xl file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-gradient-to-r file:from-blue-500 file:to-indigo-500 file:text-white hover:file:from-blue-600 hover:file:to-indigo-600 file:transition-all file:duration-300 file:shadow-md hover:file:shadow-lg"
-                />
-              </div>
-              {files && files.length > 0 && (
-                <div className="p-3 rounded-xl bg-muted/50 border">
-                  <p className="text-sm font-medium">
-                    {files.length} file{files.length > 1 ? 's' : ''} selected
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary"></span>
-                Max 10MB per file, 100MB total storage
+              <Label htmlFor="file-content" className="text-sm font-semibold">Description (Optional)</Label>
+              <Textarea
+                id="file-content"
+                placeholder="Additional details about this file..."
+                rows={4}
+                value={fileContent}
+                onChange={(e) => setFileContent(e.target.value)}
+                className="border rounded-xl focus:ring-2 focus:ring-primary/20 resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                For images, this is auto-generated by AI. You can edit it if needed.
               </p>
             </div>
             <Button

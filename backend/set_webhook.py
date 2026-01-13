@@ -2,9 +2,9 @@
 Quick script to set Telegram webhook
 Run this after starting the backend server
 """
-import requests
+import requests  # type: ignore
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore
 
 load_dotenv()
 

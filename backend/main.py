@@ -6,9 +6,9 @@ FastAPI server for Telegram bot integration
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+from fastapi import FastAPI  # type: ignore
+from fastapi.middleware.cors import CORSMiddleware  # type: ignore
+from loguru import logger  # type: ignore
 
 from app.config import settings
 from app.api import telegram_router, health_router
@@ -71,7 +71,7 @@ async def root():
 
 
 if __name__ == "__main__":
-    import uvicorn
+    import uvicorn  # type: ignore
     
     uvicorn.run(
         "main:app",

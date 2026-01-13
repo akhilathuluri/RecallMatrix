@@ -6,15 +6,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/Navbar';
 import { AddMemoryModal } from '@/components/AddMemoryModal';
 import { KnowledgeGraph } from '@/components/KnowledgeGraph';
+import { InsightsModal } from '@/components/InsightsModal';
 import { MemoryCard } from '@/components/MemoryCard';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { AnimatedBackground } from '@/components/ui/animated-background';
 import { GradientText } from '@/components/ui/gradient-text';
 import { IconWrapper } from '@/components/ui/icon-wrapper';
-import { Search, Sparkles, Loader2, Plus, MessageCircle, Zap } from 'lucide-react';
+import { Search, Sparkles, Loader2, Plus, MessageCircle, Zap, TrendingUp } from 'lucide-react';
 import { supabase, Memory } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { useInsights } from '@/hooks/use-insights';
 
 export default function Home() {
   const { user, loading: authLoading } = useAuth();
@@ -24,8 +26,10 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<string | null>(null);
   const [searchMode, setSearchMode] = useState<'instant' | 'chat'>('instant');
+  const { data: insightsData, loading: insightsLoading, fetchInsights } = useInsights();
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -74,6 +78,14 @@ export default function Home() {
     setMemories([]);
   };
 
+  const handleOpenInsights = async () => {
+    if (!user) return;
+    setShowInsights(true);
+    if (!insightsData) {
+      await fetchInsights(user.id);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -85,6 +97,7 @@ export default function Home() {
   if (!user) {
     return null;
   }
+  
   return (
     <div className="min-h-screen relative">
       <AnimatedBackground />
@@ -94,7 +107,23 @@ export default function Home() {
         <div className={`${(aiAnswer || memories.length > 0) ? '' : 'min-h-[calc(100vh-12rem)] flex flex-col items-center justify-center'}`}>
           <div className="w-full max-w-4xl mx-auto space-y-6 sm:space-y-8 md:space-y-10 animate-slide-up">
             <div className="text-center mb-8 sm:mb-12 md:mb-16">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-3 sm:mb-4 tracking-tight">
+              {/* Insights Pill Button */}
+              <div className="mb-4 flex justify-center">
+                <Button
+                  onClick={handleOpenInsights}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full px-4 py-2 h-9 gap-2 glass-card hover:shadow-lg transition-all duration-300 border-2 border-purple-200 dark:border-purple-800 hover:border-purple-400 dark:hover:border-purple-600 group"
+                >
+                  <TrendingUp className="w-4 h-4 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform" />
+                  <span className="font-semibold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                    Your Insights
+                  </span>
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 animate-pulse" />
+                </Button>
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-3 sm:mb-4 tracking-tight">,
                 Welcome back,{' '}
                 <GradientText>
                   {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
@@ -237,6 +266,13 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      <InsightsModal
+        open={showInsights}
+        onOpenChange={setShowInsights}
+        data={insightsData}
+        loading={insightsLoading}
+      />
 
       <AddMemoryModal
         open={showAddModal}

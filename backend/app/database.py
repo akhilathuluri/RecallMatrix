@@ -2,10 +2,10 @@
 Database connection and utilities
 """
 
-import asyncpg
+import asyncpg  # type: ignore
 from contextlib import asynccontextmanager
 from typing import Optional
-from loguru import logger
+from loguru import logger  # type: ignore
 
 from app.config import settings
 

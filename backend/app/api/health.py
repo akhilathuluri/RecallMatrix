@@ -2,7 +2,7 @@
 Health check endpoints
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends  # type: ignore
 from loguru import logger
 
 from app.database import get_db_pool

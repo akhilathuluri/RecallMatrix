@@ -5,19 +5,20 @@ Handles all bot interactions and command processing
 
 import asyncio
 from typing import Optional, Dict, Any
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup  # type: ignore
+from telegram.ext import (  # type: ignore
     Application,
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
 )
-from loguru import logger
+from loguru import logger  # type: ignore
 
 from app.config import settings
 from app.services.auth_service import auth_service
 from app.services.memory_service import memory_service
+from app.services.image_analysis_service import analyze_image_from_url
 from app.database import get_db_pool
 
 
@@ -440,7 +441,7 @@ Need help? Visit: {settings.APP_BASE_URL}
             )
     
     async def handle_photo_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle photo messages"""
+        """Handle photo messages with AI analysis"""
         telegram_user_id = str(update.effective_user.id)
         db = await get_db_pool()
         
@@ -457,21 +458,34 @@ Need help? Visit: {settings.APP_BASE_URL}
             return
         
         try:
+            # Send analyzing message
+            analyzing_msg = await update.message.reply_text(
+                "🔍 Analyzing image with AI...",
+                parse_mode="Markdown"
+            )
+            
             # Get photo
             photo = update.message.photo[-1]  # Largest size
-            caption = update.message.caption or "Photo from Telegram"
+            caption = update.message.caption
             
             # Get file info from Telegram
             file = await photo.get_file()
-            file_path = file.file_path
+            file_url = file.file_path
             file_name = f"photo_{photo.file_id}.jpg"
+            
+            # Analyze image with AI
+            analysis = await analyze_image_from_url(file_url, file_name)
+            
+            # Use AI-generated title and content, or fall back to caption
+            title = caption[:100] if caption else analysis["title"]
+            content = caption if caption else analysis["content"]
             
             # Create memory with photo
             result = await memory_service.create_memory_with_file(
                 user_id=status["user_id"],
-                title=caption[:100],
-                content=caption,
-                file_path=file_path,
+                title=title,
+                content=content,
+                file_path=file_url,
                 file_name=file_name,
                 file_type="image",
                 content_type="image/jpeg",
@@ -479,15 +493,26 @@ Need help? Visit: {settings.APP_BASE_URL}
                 db=db
             )
             
+            # Delete analyzing message
+            await analyzing_msg.delete()
+            
             if result["success"]:
-                await update.message.reply_text(
-                    "✅ Photo saved to your MemoryVault!",
-                    parse_mode="Markdown"
-                )
+                # Show what was detected
+                response = "✅ **Photo saved to MemoryVault!**\n\n"
+                
+                if analysis["confidence"] > 0:
+                    response += f"**AI Analysis:**\n"
+                    response += f"📝 *{analysis['title']}*\n"
+                    if analysis['content']:
+                        response += f"💬 {analysis['content'][:100]}...\n"
+                    if analysis['tags']:
+                        response += f"🏷️ {', '.join(analysis['tags'][:3])}\n"
+                
+                response += f"\n🔗 View: {settings.APP_BASE_URL}/memories"
+                
+                await update.message.reply_text(response, parse_mode="Markdown")
             else:
-                await update.message.reply_text(
-                    "❌ Failed to save photo."
-                )
+                await update.message.reply_text("❌ Failed to save photo.")
                 
         except Exception as e:
             logger.error(f"Error handling photo: {e}")

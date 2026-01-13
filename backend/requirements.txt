@@ -36,3 +36,8 @@ python-dateutil
 
 # Logging
 loguru
+
+# Note: Run 'pip install -r requirements.txt' to install all dependencies
+
+# Image Analysis
+httpx
