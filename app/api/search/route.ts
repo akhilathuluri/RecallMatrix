@@ -9,10 +9,12 @@ export async function POST(request: NextRequest) {
   try {
     const { query, userId } = await request.json();
 
-    // Only log in development to avoid exposing sensitive data in production logs
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Search request:', { query, hasUserId: !!userId });
-    }
+    // Log all requests to help debug production issues
+    console.log('[SEARCH] Request:', { 
+      query: query?.substring(0, 50), 
+      userId: userId?.substring(0, 8) + '...',
+      timestamp: new Date().toISOString()
+    });
 
     if (!query || !userId) {
       return NextResponse.json(
@@ -37,11 +39,14 @@ export async function POST(request: NextRequest) {
     );
 
     if (!embeddingResponse.ok) {
-      throw new Error('Failed to generate query embedding');
+      const errorText = await embeddingResponse.text();
+      console.error('[SEARCH] Embedding API error:', embeddingResponse.status, errorText);
+      throw new Error(`Failed to generate query embedding: ${embeddingResponse.status}`);
     }
 
     const embeddingData = await embeddingResponse.json();
     const queryEmbedding = embeddingData.data[0].embedding;
+    console.log('[SEARCH] Generated embedding successfully');
 
     // Use service role key to bypass RLS for server-side operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
@@ -69,18 +74,43 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { data: memories, error } = await supabase.rpc('search_memories', {
+    const { data: memoriesData, error } = await supabase.rpc('search_memories', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.2,
+      match_threshold: 0.15, // Lowered from 0.2 for better recall
       match_count: 10,
       user_id_param: userId,
     });
 
     if (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Search error:', error);
+      console.error('[SEARCH] Database error:', error);
+      return NextResponse.json({ 
+        memories: [], 
+        aiAnswer: null,
+        error: 'Search failed',
+        debug: process.env.NODE_ENV === 'development' ? error : undefined
+      });
+    }
+
+    let memories = memoriesData;
+
+    // Log search results for debugging
+    console.log(`[SEARCH] Found ${memories?.length || 0} memories for user ${userId.substring(0, 8)}...`);
+
+    // Fallback: If vector search finds nothing, try keyword search
+    if (!memories || memories.length === 0) {
+      console.log('[SEARCH] Vector search returned no results, trying keyword fallback...');
+      
+      const { data: keywordMemories } = await supabase
+        .from('memories')
+        .select('*')
+        .eq('user_id', userId)
+        .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+        .limit(5);
+      
+      if (keywordMemories && keywordMemories.length > 0) {
+        console.log(`[SEARCH] Keyword fallback found ${keywordMemories.length} memories`);
+        memories = keywordMemories;
       }
-      return NextResponse.json({ memories: [], aiAnswer: null });
     }
 
     // Generate AI answer if memories found OR if bio exists
